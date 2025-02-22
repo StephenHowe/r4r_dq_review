@@ -1,0 +1,180 @@
+---
+title: "R|R Data Quality Queries"
+output: html_notebook
+---
+
+## Configuration
+```{r}
+library(aws.s3)
+library(arrow)
+library(duckdb)
+library(dplyr)
+```
+
+
+##  Create Connections to Datasets
+```{r}
+# arrow datasets
+da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
+au <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/author/")
+au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/", format = "json")
+inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
+art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
+aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
+
+# duckdb tables
+con <- dbConnect(duckdb::duckdb())
+duckdb_register_arrow(con, "distinctAuthor", da)
+duckdb_register_arrow(con, "author", au)
+duckdb_register_arrow(con, "author_doc", au_docs)
+duckdb_register_arrow(con, "institutions", inst)
+duckdb_register_arrow(con, "articles", art)
+duckdb_register_arrow(con, "affiliated_to", aff)
+```
+
+
+## Descriptive Statistics and Quality Checks
+### What is the count of distinctAuthors?
+```{r}
+da |> count() |> collect()
+au |> count() |> collect()
+au_docs |> count() |> collect()
+```
+### What is the distribution of occurrences?
+```{r}
+dbGetQuery(con,
+           "SELECT MIN(da.occurrences) as min,
+           QUANTILE_CONT(da.occurrences, 0.25) as p25,
+           MEDIAN(da.occurrences) as med,
+           QUANTILE_CONT(da.occurrences, 0.75) as p75,
+           QUANTILE_CONT(da.occurrences, 0.9) as p90,
+           QUANTILE_CONT(da.occurrences, 0.95) as p95,
+           QUANTILE_CONT(da.occurrences, 0.99) as p99,
+           QUANTILE_CONT(da.occurrences, 0.999) as p999,
+           QUANTILE_CONT(da.occurrences, 0.9999) as p9999,
+           MAX(da.occurrences) as max
+           FROM distinctAuthor da")
+```
+### Which author has the most (max) occurrences?
+```{r}
+dbGetQuery(con,
+           "SELECT * FROM distinctAuthor WHERE occurrences = 516")
+```
+### Which authors have the most (99.99 percentile) occurrences?
+```{r}
+dbGetQuery(con,
+           "SELECT * FROM distinctAuthor WHERE occurrences >= 158")
+```
+Note: look at Valeria V. Tynchenko at 182 occurrences. One article found online: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9464340. Also co-authored with Vadim Tynchenko.
+
+### What is the distribution of the number of collaborators
+```{r}
+dbGetQuery(con,
+           "SELECT MIN(da.collaborators_count) as min,
+           QUANTILE_CONT(da.collaborators_count, 0.25) as p25,
+           MEDIAN(da.collaborators_count) as med,
+           QUANTILE_CONT(da.collaborators_count, 0.75) as p75,
+           QUANTILE_CONT(da.collaborators_count, 0.9) as p90,
+           QUANTILE_CONT(da.collaborators_count, 0.95) as p95,
+           QUANTILE_CONT(da.collaborators_count, 0.99) as p99,
+           QUANTILE_CONT(da.collaborators_count, 0.999) as p999,
+           QUANTILE_CONT(da.collaborators_count, 0.9999) as p9999,
+           MAX(da.collaborators_count) as max
+           FROM distinctAuthor da")
+```
+### Which author has the most (MAX) collaborators?
+```{r}
+dbGetQuery(con,
+           "SELECT * FROM distinctAuthor WHERE collaborators_count = 7384")
+```
+### Which authors have the most (99.99 percentile) collaborators?
+```{r}
+dbGetQuery(con,
+           "SELECT * FROM distinctAuthor WHERE collaborators_count >= 4342")
+```
+### What is the distribution of the degree of belief
+```{r}
+dbGetQuery(con,
+           "SELECT MIN(da.degree_of_belief) as min,
+           QUANTILE_CONT(da.degree_of_belief, 0.25) as p25,
+           MEDIAN(da.degree_of_belief) as med,
+           QUANTILE_CONT(da.degree_of_belief, 0.75) as p75,
+           QUANTILE_CONT(da.degree_of_belief, 0.9) as p90,
+           QUANTILE_CONT(da.degree_of_belief, 0.95) as p95,
+           QUANTILE_CONT(da.degree_of_belief, 0.99) as p99,
+           QUANTILE_CONT(da.degree_of_belief, 0.999) as p999,
+           QUANTILE_CONT(da.degree_of_belief, 0.9999) as p9999,
+           MAX(da.degree_of_belief) as max
+           FROM distinctAuthor da")
+```
+### How many distinctAuthors have a Degree of Belief of 1.0?
+```{r}
+dbGetQuery(con,
+           "SELECT count(*)
+           FROM distinctAuthor da
+           WHERE da.degree_of_belief = 1")
+```
+### How many distinctAuthors have a Degree of Belief of 1.0 and only 1 article (cluster size = 1)?
+```{r}
+dbGetQuery(con,
+           "SELECT count(*)
+           FROM distinctAuthor da
+           WHERE da.degree_of_belief = 1
+           AND da.occurrences = 1")
+```
+### How many linked institutions are there?
+```{r}
+inst |> count() |> collect()
+```
+### What are the properties of the AFFILIATION edge?
+```{r}
+aff |> head(10) |> collect()
+```
+### How many affiliation relationships are there?
+```{r}
+aff |> count() |> collect()
+```
+### What is the count of distinct institutions with affiliations?
+```{r}
+aff |> distinct(target) |> count() |> collect()
+```
+### What are the institutions with the most affiliations?
+```{r}
+aff |>
+  group_by(target) |>
+  summarise(count = n()) |>
+  arrange(desc(count)) |>
+  head(25) |>
+  collect()
+
+
+```
+### What is the distribution of affiliations per author?
+```{r}
+affialtions_to_author <- aff |>
+  group_by(source) |>
+  summarise(count = n(),
+            ) |>
+  collect()
+
+affialtions_to_author |>
+  summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
+            count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
+```
+# In which countries are the institutions with the most affiliations?
+```{r}
+institutions <- inst |> collect()
+affiliations <- aff |> collect()
+
+affiliations |>
+  left_join(institutions, by = c("target" = "id")) |>
+  group_by(country_name) |>
+  summarise(count = n()) |>
+  arrange(desc(count))
+
+```
+
+## Next Question
+
+
+## END OF DOC
