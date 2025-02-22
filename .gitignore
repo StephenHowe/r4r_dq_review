@@ -6,3 +6,4 @@
 .quarto
 .Renviron
 *.html
+data/
