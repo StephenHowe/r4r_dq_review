@@ -6,6 +6,7 @@
 library(shiny)
 library(dplyr)
 
+# data config
 rc <- read.csv("rc.csv")
 menu_list <- list(
   "Top 10" = rc[rc$category == "Top 10", 2],
@@ -20,6 +21,11 @@ menu_list <- list(
 )
 
 ri <- read.csv("ri.csv")
+rn <- read.csv("rn.csv")
+ra <- read.csv("ra.csv")
+rf <- read.csv("rf.csv")
+rl <- read.csv("rl.csv")
+rm <- read.csv("rm.csv")
 
 
 # UI
@@ -38,8 +44,19 @@ ui <- fluidPage(
       h3("Data for Selected Researcher"),
       h4("Researcher Core Data"),
       tableOutput("rc"),
+      h4("Researcher Name Variants"),
+      tableOutput("rn"),
       h4("Researcher Identifiers"),
-      tableOutput("ri")
+      tableOutput("ri"),
+      h4("Researcher Recent Articles"),
+      tableOutput("ra"),
+      h4("Researcher Most Cited Articles"),
+      tableOutput("rm"),
+      h4("Researcher Affiliated Organizations"),
+      tableOutput("rf"),
+      h4("Researcher Collaborators"),
+      tableOutput("rl")
+
     )
   )
 )
@@ -82,56 +99,160 @@ server <- function(input, output, session) {
       filter(category == input$category &
                r4r_id == input$r4r_id)
 
+    if (nrow(ri_temp) == 0) {
+      data.frame(
+        Field = "Identifiers",
+        Value = "No external identifiers"
+      )
+    } else {
+
     data.frame(
       Field = "Identifiers",
-      Value = ri_temp$identifiers
-    )
-  })
-}
+      Value = ri_temp$identifiers)
+    }
+  }) # end of ri
+
+  # Display rn ----
+  output$rn <- renderTable({
+    rn_temp <- rn |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    if (nrow(rn_temp) == 0) {
+      data.frame(
+        Field = c("Alternate Name",
+                  "Work Count"),
+        Value = c("No Alternate Name",
+                  "No Work Count")
+      )
+    } else {
+      rn_temp |>
+        select(alt_name, work_count) |>
+        rename("Alternate Name" = alt_name,
+               "Work Count" = work_count)
+    }
+
+  }) # end of rn
+
+  # Display ra ----
+  output$ra <- renderTable({
+    ra_temp <- ra |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    if (nrow(ra_temp) == 0) {
+      data.frame(
+        Field = c("Article Name",
+                  "PubDate",
+                  "Identifier",
+                  "Citation Count"),
+        Value = c("No Article Name",
+                  "No PubDate",
+                  "No Identifier",
+                  "No Citation Count")
+      )
+    } else {
+      ra_temp |>
+        select(name, date_published, identifier, citation_count) |>
+        rename("Article Name" = name,
+               "PubDate" = date_published,
+               "Identifier" = identifier,
+               "Citation Count" = citation_count)
+    }
+
+  }) # end of ra
+
+  # Display rm ----
+  output$rm <- renderTable({
+    rm_temp <- rm |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    if (nrow(rm_temp) == 0) {
+      data.frame(
+        Field = c("Article Name",
+                  "PubDate",
+                  "Identifier",
+                  "Citation Count"),
+        Value = c("No Article Name",
+                  "No PubDate",
+                  "No Identifier",
+                  "No Citation Count")
+      )
+    } else {
+      rm_temp |>
+        select(name, date_published, identifier, citation_count) |>
+        rename("Article Name" = name,
+               "PubDate" = date_published,
+               "Identifier" = identifier,
+               "Citation Count" = citation_count)
+    }
+
+  }) # end of rm
+
+  # Display rf ----
+  output$rf <- renderTable({
+    rf_temp <- rf |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    if (nrow(rf_temp) == 0) {
+      data.frame(
+        Field = c("Org Name",
+                  "Identifier",
+                  "Postal Address",
+                  "Start Year",
+                  "End Year",
+                  "Score",
+                  "Publication Count"),
+        Value = c("No Org Name",
+                  "No Identifier",
+                  "No Postal Address",
+                  "No Start Year",
+                  "No End Year",
+                  "No Score",
+                  "No Publication Count")
+      )
+    } else {
+      rf_temp |>
+        select(name, identifier, postal_address, start_year, end_year, score, publication_count) |>
+        rename("Org Name" = name,
+               "Identifier" = identifier,
+               "Postal Address" = postal_address,
+               "Start Year" = start_year,
+               "End Year" = end_year,
+               "Score" = score,
+               "Publication Count" = publication_count)
+    }
+
+  }) # end of rf
+
+  # Display rl ----
+  output$rl <- renderTable({
+    rl_temp <- rl |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    if (nrow(rl_temp) == 0) {
+      data.frame(
+        Field = c("Name",
+                  "Identifier",
+                  "Collaboration Count"),
+        Value = c("No Name",
+                  "No Identifier",
+                  "No Collaboration Count")
+      )
+    } else {
+      rl_temp |>
+        select(name, identifier, collaboration_count) |>
+        rename("Name" = name,
+               "Identifier" = identifier,
+               "Collaboration Count" = collaboration_count)
+    }
+
+  }) # end of rl
+
+} # end of server
 
 # Run the application
 shinyApp(ui = ui, server = server)
-
-
-
-
-
-# ui <- fluidPage(
-#
-#     # Application title
-#     titlePanel("Old Faithful Geyser Data"),
-#
-#     # Sidebar with a slider input for number of bins
-#     sidebarLayout(
-#         sidebarPanel(
-#             sliderInput("bins",
-#                         "Number of bins:",
-#                         min = 1,
-#                         max = 50,
-#                         value = 30)
-#         ),
-#
-#         # Show a plot of the generated distribution
-#         mainPanel(
-#            plotOutput("distPlot")
-#         )
-#     )
-# )
-#
-# # Define server logic required to draw a histogram
-# server <- function(input, output) {
-#
-#     output$distPlot <- renderPlot({
-#         # generate bins based on input$bins from ui.R
-#         x    <- faithful[, 2]
-#         bins <- seq(min(x), max(x), length.out = input$bins + 1)
-#
-#         # draw the histogram with the specified number of bins
-#         hist(x, breaks = bins, col = 'darkgray', border = 'white',
-#              xlab = 'Waiting time to next eruption (in mins)',
-#              main = 'Histogram of waiting times')
-#     })
-# }
-
-# # Run the application
-# shinyApp(ui = ui, server = server)
