@@ -4,31 +4,42 @@
 
 # From ChatGPT
 library(shiny)
+library(dplyr)
 
-# Define the available countries and their corresponding regions
-country_regions <- list(
-  "United States" = c("California", "Texas", "New York", "Florida", "Illinois"),
-  "Canada" = c("Ontario", "Quebec", "British Columbia", "Alberta", "Manitoba"),
-  "United Kingdom" = c("England", "Scotland", "Wales", "Northern Ireland"),
-  "Australia" = c("New South Wales", "Victoria", "Queensland", "Western Australia", "South Australia"),
-  "Germany" = c("Bavaria", "Berlin", "Hamburg", "Saxony", "Hesse")
+rc <- read.csv("rc.csv")
+menu_list <- list(
+  "Top 10" = rc[rc$category == "Top 10", 2],
+  "DoB 60 to 70" = rc[rc$category == "DoB 60 to 70", 2],
+  "DoB 70 to 80" = rc[rc$category == "DoB 70 to 80", 2],
+  "DoB 80 to 90" = rc[rc$category == "DoB 80 to 90", 2],
+  "DoB 90 to 95" = rc[rc$category == "DoB 90 to 95", 2],
+  "DoB 95 to 100" = rc[rc$category == "DoB 95 to 100", 2],
+  "Top 10 Collab" = rc[rc$category == "Top 10 Collab", 2],
+  "Top 10 Affil" = rc[rc$category == "Top 10 Affil", 2],
+  "Top 20 Random" = rc[rc$category == "Top 20 Random", 2]
 )
+
+ri <- read.csv("ri.csv")
+
 
 # UI
 ui <- fluidPage(
-  titlePanel("Country and Region Selector"),
+  titlePanel("Ringgold|Researchers - Data Review"),
 
   sidebarLayout(
     sidebarPanel(
-      selectInput("country", "Select a Country:",
-                  choices = names(country_regions), selected = "United States"),
+      selectInput("category", "Select a Category:",
+                  choices = names(menu_list), selected = "Top 10"),
 
-      selectInput("region", "Select a Region:", choices = NULL)
+      selectInput("r4r_id", "Select a Researcher:", choices = NULL)
     ),
 
     mainPanel(
-      h3("Selected Country and Region"),
-      textOutput("selection")
+      h3("Data for Selected Researcher"),
+      h4("Researcher Core Data"),
+      tableOutput("rc"),
+      h4("Researcher Identifiers"),
+      tableOutput("ri")
     )
   )
 )
@@ -36,14 +47,45 @@ ui <- fluidPage(
 # Server
 server <- function(input, output, session) {
 
-  # Update the region dropdown based on the selected country
-  observeEvent(input$country, {
-    updateSelectInput(session, "region", choices = country_regions[[input$country]])
+  # Update the researcher id dropdown based on the selected category
+  observeEvent(input$category, {
+    updateSelectInput(session, "r4r_id", choices = menu_list[[input$category]])
   })
 
-  # Display selected values
-  output$selection <- renderText({
-    paste("Country:", input$country, "| Region:", input$region)
+  # Display rc ----
+  output$rc <- renderTable({
+    rc_temp <- rc |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    data.frame(
+      Field = c("r4r_id",
+                "family_name",
+                "given_name",
+                "degree_of_belief",
+                "authorship_period_start",
+                "authorship_period_end",
+                "occurrences"),
+      Value = c(rc_temp$r4r_id,
+                rc_temp$family_name,
+                rc_temp$given_name,
+                rc_temp$degree_of_belief,
+                rc_temp$authorship_period_start,
+                rc_temp$authorship_period_end,
+                rc_temp$occurrences)
+    )
+  })
+
+  # Display ri ----
+  output$ri <- renderTable({
+    ri_temp <- ri |>
+      filter(category == input$category &
+               r4r_id == input$r4r_id)
+
+    data.frame(
+      Field = "Identifiers",
+      Value = ri_temp$identifiers
+    )
   })
 }
 
