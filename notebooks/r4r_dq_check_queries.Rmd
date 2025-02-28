@@ -9,6 +9,8 @@ library(aws.s3)
 library(arrow)
 library(duckdb)
 library(dplyr)
+library(ggplot2)
+library(tidyr)
 ```
 
 
@@ -16,7 +18,7 @@ library(dplyr)
 ```{r}
 # arrow datasets
 da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
-au <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/author/")
+# au <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/author/")
 au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/", format = "json")
 inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
 art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
@@ -25,7 +27,7 @@ aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/
 # duckdb tables
 con <- dbConnect(duckdb::duckdb())
 duckdb_register_arrow(con, "distinctAuthor", da)
-duckdb_register_arrow(con, "author", au)
+# duckdb_register_arrow(con, "author", au)
 duckdb_register_arrow(con, "author_doc", au_docs)
 duckdb_register_arrow(con, "institutions", inst)
 duckdb_register_arrow(con, "articles", art)
@@ -37,7 +39,7 @@ duckdb_register_arrow(con, "affiliated_to", aff)
 ### What is the count of distinctAuthors?
 ```{r}
 da |> count() |> collect()
-au |> count() |> collect()
+# au |> count() |> collect()
 au_docs |> count() |> collect()
 ```
 ### What is the distribution of occurrences?
@@ -107,6 +109,39 @@ dbGetQuery(con,
            MAX(da.degree_of_belief) as max
            FROM distinctAuthor da")
 ```
+
+### What is the distribution of the degree of belief for authors with more than 1 article?
+```{r}
+dbGetQuery(con,
+           "SELECT MIN(da.degree_of_belief) as min,
+           QUANTILE_CONT(da.degree_of_belief, 0.25) as p25,
+           MEDIAN(da.degree_of_belief) as med,
+           QUANTILE_CONT(da.degree_of_belief, 0.75) as p75,
+           QUANTILE_CONT(da.degree_of_belief, 0.9) as p90,
+           QUANTILE_CONT(da.degree_of_belief, 0.95) as p95,
+           QUANTILE_CONT(da.degree_of_belief, 0.99) as p99,
+           QUANTILE_CONT(da.degree_of_belief, 0.999) as p999,
+           QUANTILE_CONT(da.degree_of_belief, 0.9999) as p9999,
+           MAX(da.degree_of_belief) as max
+           FROM distinctAuthor da
+           WHERE da.occurrences > 1")
+```
+### Scatterplot of DoB to Occurrences for Authors with > 1 Occurrences (10000 random)
+```{r}
+da_1000 <- dbGetQuery(con,
+           "SELECT da.occurrences, da.degree_of_belief
+           FROM distinctAuthor da
+           WHERE da.occurrences > 1
+           ORDER BY RANDOM()
+           LIMIT 10000")
+
+p1 <- ggplot(da_1000, aes(x=occurrences, y=degree_of_belief)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+p1
+```
+
 ### How many distinctAuthors have a Degree of Belief of 1.0?
 ```{r}
 dbGetQuery(con,
@@ -161,6 +196,17 @@ affialtions_to_author |>
   summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
             count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
 ```
+# Plot of Affiliations by Pub Year
+```{r}
+# data munging
+counts_year <- unlist(affiliations$publication_info) 
+counts_year_df <- data.frame(
+  pubyear_count = counts_year) |>
+  separate(pubyear_count, into = c("pub_year", "count", sep = ":"))
+
+
+```
+
 # In which countries are the institutions with the most affiliations?
 ```{r}
 institutions <- inst |> collect()
