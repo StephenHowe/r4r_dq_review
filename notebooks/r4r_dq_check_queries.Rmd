@@ -4,7 +4,7 @@ output: html_notebook
 ---
 
 ## Configuration
-```{r}
+```{r packages, warning=FALSE, message=FALSE}
 library(aws.s3)
 library(arrow)
 library(duckdb)
@@ -15,10 +15,10 @@ library(tidyr)
 
 
 ##  Create Connections to Datasets
-```{r}
+This code establishes a connection to the .parquet files in SAND_DS S3 as arrow datasets and then again as duckDB tables.
+```{r datasets}
 # arrow datasets
 da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
-# au <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/author/")
 au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/", format = "json")
 inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
 art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
@@ -27,7 +27,6 @@ aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/
 # duckdb tables
 con <- dbConnect(duckdb::duckdb())
 duckdb_register_arrow(con, "distinctAuthor", da)
-# duckdb_register_arrow(con, "author", au)
 duckdb_register_arrow(con, "author_doc", au_docs)
 duckdb_register_arrow(con, "institutions", inst)
 duckdb_register_arrow(con, "articles", art)
@@ -42,6 +41,21 @@ da |> count() |> collect()
 # au |> count() |> collect()
 au_docs |> count() |> collect()
 ```
+### What is the count of articles?
+```{r article_count}
+art |> count() |> collect()
+```
+
+### What is the count of institutions?
+```{r inst_count}
+inst |> count() |> collect()
+```
+
+### What is the count of affiliations?
+```{r aff_count}
+aff |> count() |> collect()
+```
+
 ### What is the distribution of occurrences?
 ```{r}
 dbGetQuery(con,
@@ -94,6 +108,40 @@ dbGetQuery(con,
 dbGetQuery(con,
            "SELECT * FROM distinctAuthor WHERE collaborators_count >= 4342")
 ```
+
+### What is the relationship between collaborator count and occurrences?
+Uses a random sample of 1000 authors
+```{r collab_occ}
+collab_occ <- dbGetQuery(
+  con,
+  "SELECT da.collaborators_count, da.occurrences
+  FROM distinctAuthor da
+  WHERE da.occurrences > 5
+  ORDER BY RANDOM()
+  LIMIT 1000"
+)
+
+# Fit linear model
+model <- lm(collaborators_count ~ occurrences, data = collab_occ)
+ 
+# Compute residuals
+collab_occ$above_line <- residuals(model) > 0  # TRUE if above the regression line
+ 
+# Scatterplot with differentiation
+ggplot(collab_occ, aes(x = occurrences, y = collaborators_count, color = above_line)) +
+  geom_point() +
+  # geom_smooth(method = "lm") +
+  scale_color_manual(values = c("skyblue", "orange")) +  # Choose colors as needed
+  labs(color = "Above Regression Line")
+
+# Histograph with differentiation
+ggplot(collab_occ, aes(x = collaborators_count, fill = above_line)) +
+  geom_histogram(binwidth = 50) +  
+  scale_fill_manual(values = c("skyblue", "orange")) +  
+  labs(x = "Collaborators Count", y = "Frequency", fill = "Above Regression Line")
+
+```
+
 ### What is the distribution of the degree of belief
 ```{r}
 dbGetQuery(con,
@@ -157,7 +205,7 @@ dbGetQuery(con,
            WHERE da.degree_of_belief = 1
            AND da.occurrences = 1")
 ```
-### How many linked institutions are there?
+### How many linked institutions are there? (repeat)
 ```{r}
 inst |> count() |> collect()
 ```
@@ -181,8 +229,6 @@ aff |>
   arrange(desc(count)) |>
   head(25) |>
   collect()
-
-
 ```
 ### What is the distribution of affiliations per author?
 ```{r}
@@ -196,18 +242,59 @@ affialtions_to_author |>
   summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
             count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
 ```
-# Plot of Affiliations by Pub Year
+### Plots of Affiliations - Occurrences
+
+Note: this doesn't seen really helpful until we have more affiliations
 ```{r}
-# data munging
-counts_year <- unlist(affiliations$publication_info) 
-counts_year_df <- data.frame(
-  pubyear_count = counts_year) |>
-  separate(pubyear_count, into = c("pub_year", "count", sep = ":"))
+aff_occ <- dbGetQuery(
+  con,
+  "SELECT af.source, da.occurrences, count(*) as aff_count
+  FROM distinctAuthor da
+  LEFT JOIN affiliated_to af on af.source = da.id
+  GROUP BY af.source, da.occurrences"
+)
 
+aff_occ_2 <- aff_occ |> filter(is.na(source) == FALSE)
 
+# Fit linear model
+model_aff <- lm(aff_count ~ occurrences, data = aff_occ_2)
+ 
+# Compute residuals
+aff_occ_2$above_line <- residuals(model_aff) > 0  # TRUE if above the regression line
+ 
+# Scatterplot with differentiation
+ggplot(aff_occ_2, aes(x = occurrences, y = aff_count, color = above_line)) +
+  geom_point() +
+  # geom_smooth(method = "lm") +
+  scale_color_manual(values = c("skyblue", "orange")) +  # Choose colors as needed
+  labs(color = "Above Regression Line")
+
+# Histograph with differentiation
+ggplot(aff_occ_2, aes(x = aff_count, fill = above_line)) +
+  geom_histogram(binwidth = 2) +  
+  scale_fill_manual(values = c("skyblue", "orange")) +  
+  labs(x = "Affiliations Count", y = "Frequency", fill = "Above Regression Line")
 ```
 
-# In which countries are the institutions with the most affiliations?
+### Plot of Affiliations by Pub Year
+```{r}
+# data munging
+counts_year <- unlist(affiliations$publication_info)
+counts_year_df <- data.frame(
+  pubyear_count = counts_year) |>
+  separate(pubyear_count, into = c("pub_year", "count"), sep = ":")
+
+# aggregate
+count_year_summarise <- counts_year_df |>
+  group_by(pub_year) |>
+  summarise(total = sum(as.numeric(count)))
+
+ggplot(count_year_summarise, aes(x = pub_year, y = total)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Count of Affiliations by Publication Year")
+```
+
+### In which countries are the institutions with the most affiliations?
 ```{r}
 institutions <- inst |> collect()
 affiliations <- aff |> collect()
@@ -220,7 +307,79 @@ affiliations |>
 
 ```
 
-## Next Question
+## ORCID
+```{r}
+r4rid_orcid <- dbGetQuery(
+  con,
+  "SELECT id, occurrences, orcid
+  FROM distinctAuthor
+  WHERE LEN(orcid) > 1"
+)
 
+r4rid_orcid_unnest <- tibble(
+  r4r_id = r4rid_orcid$id,
+  occurrences = r4rid_orcid$occurrences,
+  orcid = r4rid_orcid$orcid) |>
+  unnest_longer(orcid) |>
+  filter(orcid != "")
 
+id_orc_occ <- r4rid_orcid_unnest |>
+  group_by(r4r_id, occurrences) |>
+  summarise(orc_count = n())
+
+ggplot(id_orc_occ, aes(x=occurrences, y=orc_count)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+```{r}
+# Fit linear model
+model_orcid <- lm(orc_count ~ occurrences, data = id_orc_occ)
+ 
+# Compute residuals
+id_orc_occ$above_line <- residuals(model_orcid) > 0  # TRUE if above the regression line
+
+temp <- id_orc_occ |> filter(above_line == FALSE)
+fivenum(temp$orc_count)
+quantile(temp$orc_count, c(.9,.95,.99,.999,1))
+
+```
+## Name Variants
+```{r}
+r4rid_namevar <- dbGetQuery(
+  con,
+  "SELECT id, occurrences, name_variants
+  FROM distinctAuthor
+  WHERE occurrences > 5"
+)
+
+r4rid_namevar_unnest <- tibble(
+  r4r_id = r4rid_namevar$id,
+  occurrences = r4rid_namevar$occurrences,
+  namevar = r4rid_namevar$name_variants) |>
+  unnest_longer(namevar)
+
+id_nv_occ <- r4rid_namevar_unnest |>
+  group_by(r4r_id, occurrences) |>
+  summarise(namevar_count = n())
+
+# set.seed(4567)
+# id_nv_occ_sample <- id_nv_occ |>
+#   mutate(random = runif(1)) |>
+#   arrange(random) |>
+#   head(10000)
+
+ggplot(id_nv_occ, aes(x=occurrences, y=namevar_count)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+max(id_nv_occ$namevar_count)
+```
 ## END OF DOC
+
+
+
+
+
+
+
+
