@@ -3,6 +3,8 @@ title: "R|R Data Quality Queries"
 output: html_notebook
 ---
 
+This notebook was run on `r Sys.Date()`
+
 ## Configuration
 ```{r packages, warning=FALSE, message=FALSE}
 library(aws.s3)
@@ -11,6 +13,7 @@ library(duckdb)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+library(plotly)
 ```
 
 
@@ -74,7 +77,7 @@ dbGetQuery(con,
 ### Which author has the most (max) occurrences?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor WHERE occurrences = 516")
+           "SELECT * FROM distinctAuthor da WHERE da.occurrences = 298")
 ```
 ### Which authors have the most (99.99 percentile) occurrences?
 ```{r}
@@ -101,12 +104,12 @@ dbGetQuery(con,
 ### Which author has the most (MAX) collaborators?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor WHERE collaborators_count = 7384")
+           "SELECT * FROM distinctAuthor WHERE collaborators_count = 6848")
 ```
 ### Which authors have the most (99.99 percentile) collaborators?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor WHERE collaborators_count >= 4342")
+           "SELECT * FROM distinctAuthor WHERE collaborators_count >= 4709")
 ```
 
 ### What is the relationship between collaborator count and occurrences?
@@ -276,6 +279,18 @@ ggplot(aff_occ_2, aes(x = aff_count, fill = above_line)) +
   labs(x = "Affiliations Count", y = "Frequency", fill = "Above Regression Line")
 ```
 
+### In which countries are the institutions with the most affiliations?
+```{r}
+institutions <- inst |> collect()
+affiliations <- aff |> collect()
+
+affiliations |>
+  left_join(institutions, by = c("target" = "id")) |>
+  group_by(country_name) |>
+  summarise(count = n()) |>
+  arrange(desc(count))
+
+```
 ### Plot of Affiliations by Pub Year
 ```{r}
 # data munging
@@ -293,20 +308,6 @@ ggplot(count_year_summarise, aes(x = pub_year, y = total)) +
   geom_bar(stat = "identity") +
   labs(title = "Count of Affiliations by Publication Year")
 ```
-
-### In which countries are the institutions with the most affiliations?
-```{r}
-institutions <- inst |> collect()
-affiliations <- aff |> collect()
-
-affiliations |>
-  left_join(institutions, by = c("target" = "id")) |>
-  group_by(country_name) |>
-  summarise(count = n()) |>
-  arrange(desc(count))
-
-```
-
 ## ORCID
 ```{r}
 r4rid_orcid <- dbGetQuery(
@@ -374,6 +375,44 @@ ggplot(id_nv_occ, aes(x=occurrences, y=namevar_count)) +
 
 max(id_nv_occ$namevar_count)
 ```
+### Name Variants, Occurrences, DoB
+```{r}
+r4rid_namevar_dob <- dbGetQuery(
+  con,
+  "SELECT id, occurrences, name_variants, degree_of_belief
+  FROM distinctAuthor
+  WHERE occurrences > 5"
+)
+
+r4rid_namevar_dob_unnest <- tibble(
+  r4r_id = r4rid_namevar_dob$id,
+  occurrences = r4rid_namevar_dob$occurrences,
+  dob = r4rid_namevar_dob$degree_of_belief,
+  namevar = r4rid_namevar_dob$name_variants) |>
+  unnest_longer(namevar)
+
+id_nv_occ_dob <- r4rid_namevar_dob_unnest |>
+  group_by(r4r_id, occurrences, dob) |>
+  summarise(namevar_count = n())
+
+plot_ly(data = id_nv_occ_dob, x=~occurrences, y=~namevar_count, z=~dob,
+        type="scatter3d", mode="markers",
+        jitter = 0)
+
+# set.seed(4567)
+# id_nv_occ_sample <- id_nv_occ |>
+#   mutate(random = runif(1)) |>
+#   arrange(random) |>
+#   head(10000)
+
+# ggplot(id_nv_occ, aes(x=occurrences, y=namevar_count)) +
+#   geom_point() +
+#   geom_smooth(method = "lm")
+# 
+# max(id_nv_occ$namevar_count)
+
+```
+
 ## END OF DOC
 
 
