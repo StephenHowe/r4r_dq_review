@@ -42,7 +42,7 @@ duckdb_register_arrow(con, "affiliated_to", aff)
 ```{r}
 da |> count() |> collect()
 # au |> count() |> collect()
-au_docs |> count() |> collect()
+# au_docs |> count() |> collect()
 ```
 ### What is the count of articles?
 ```{r article_count}
@@ -77,12 +77,12 @@ dbGetQuery(con,
 ### Which author has the most (max) occurrences?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor da WHERE da.occurrences = 298")
+           "SELECT * FROM distinctAuthor da WHERE da.occurrences = 307")
 ```
 ### Which authors have the most (99.99 percentile) occurrences?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor WHERE occurrences >= 158")
+           "SELECT * FROM distinctAuthor WHERE occurrences >= 164")
 ```
 Note: look at Valeria V. Tynchenko at 182 occurrences. One article found online: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9464340. Also co-authored with Vadim Tynchenko.
 
@@ -104,12 +104,12 @@ dbGetQuery(con,
 ### Which author has the most (MAX) collaborators?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor WHERE collaborators_count = 6848")
+           "SELECT * FROM distinctAuthor WHERE collaborators_count = 10484")
 ```
 ### Which authors have the most (99.99 percentile) collaborators?
 ```{r}
 dbGetQuery(con,
-           "SELECT * FROM distinctAuthor WHERE collaborators_count >= 4709")
+           "SELECT * FROM distinctAuthor WHERE collaborators_count >= 5929")
 ```
 
 ### What is the relationship between collaborator count and occurrences?

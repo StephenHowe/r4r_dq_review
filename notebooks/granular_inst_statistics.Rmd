@@ -1,0 +1,128 @@
+---
+title: "Affiliated Institution Statistics"
+output: html_notebook
+---
+
+This notebook was run on `r Sys.Date()`
+
+## Configuration
+```{r packages, warning=FALSE, message=FALSE}
+library(aws.s3)
+library(arrow)
+library(duckdb)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(plotly)
+```
+
+# Data
+This code establishes a connection to the .parquet files in SAND_DS S3 as arrow datasets.
+```{r datasets}
+# arrow datasets
+aff_to_edge <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/covid/graph/edges/IM_AFFILIATED_TO")
+aff_to_edge_gran <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/covid/graph/edges/IM_AFFILIATED_TO_GRANULAR")
+
+inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/covid/graph/nodes/linked_institutions/")
+inst_gran <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/covid/graph/nodes/linked_institutions_granular/")
+
+aff_edge <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/covid/graph/edges/AFFILIATION/")
+aff_edge_gran <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/covid/graph/edges/AFFILIATION_GRANULAR/")
+```
+
+# Questions
+### How many linked institutions are there?
+Before
+```{r}
+inst |> count() |> collect()
+```
+After
+```{r}
+inst_gran |> count() |> collect()
+```
+### How many affiliation relationships are there?
+Before
+```{r}
+aff_edge |> count() |> collect()
+```
+After
+```{r}
+aff_edge_gran |> count() |> collect()
+```
+
+### What is the count of distinct institutions with affiliations?
+Before
+```{r}
+aff_edge |> distinct(target) |> count() |> collect()
+```
+Before
+```{r}
+aff_edge_gran |> distinct(target) |> count() |> collect()
+```
+
+### What are the institutions with the most affiliations?
+Before
+```{r}
+aff_edge |>
+  group_by(target) |>
+  summarise(count = n()) |>
+  arrange(desc(count)) |>
+  head(25) |>
+  collect()
+```
+After
+```{r}
+aff_edge_gran |>
+  group_by(target) |>
+  summarise(count = n()) |>
+  arrange(desc(count)) |>
+  head(25) |>
+  collect()
+```
+### What is the distribution of affiliations per author?
+Before
+```{r}
+affiliations_to_author <- aff_edge |>
+  group_by(source) |>
+  summarise(count = n(),
+            ) |>
+  collect()
+
+affiliations_to_author |>
+  summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
+            count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
+```
+After
+```{r}
+affiliations_to_author_gran <- aff_edge_gran |>
+  group_by(source) |>
+  summarise(count = n(),
+            ) |>
+  collect()
+
+affiliations_to_author_gran |>
+  summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
+            count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

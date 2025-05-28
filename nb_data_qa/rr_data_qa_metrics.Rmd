@@ -1,0 +1,35 @@
+---
+title: "R|R Data Quality Assurance"
+output: html_notebook
+---
+
+This notebook was run on `r Sys.Date()`
+
+## Configuration
+```{r packages, warning=FALSE, message=FALSE}
+library(aws.s3)
+library(arrow)
+library(duckdb)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(plotly)
+```
+
+##  Create Connections to Datasets
+This code establishes a connection to the .parquet files in SAND_DS S3 as arrow datasets and then again as duckDB tables.
+```{r datasets}
+# arrow datasets
+da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
+inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
+art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
+aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
+
+# duckdb tables
+con <- dbConnect(duckdb::duckdb())
+duckdb_register_arrow(con, "distinctAuthor", da)
+duckdb_register_arrow(con, "institutions", inst)
+duckdb_register_arrow(con, "articles", art)
+duckdb_register_arrow(con, "affiliated_to", aff)
+```
+

@@ -127,6 +127,34 @@ getResearcherCollaborators <- function(x){
   }
 }
 
+
+getResearcherMostCited <- function(x){
+  if (is.null(x$most_cited_articles[[1]])) {
+
+    data.frame(
+      r4r_id = x$persistent_identifier,
+      name = "no article",
+      date_published = "no date",
+      identifier = "no identifier",
+      citation_count = "no citations")
+
+  } else {
+
+    data.frame(
+      r4r_id = x$persistent_identifier,
+      name = x$most_cited_articles[[1]]$name,
+      date_published = as.character(x$most_cited_articles[[1]]$date_published),
+      identifier = x$most_cited_articles[[1]]$identifier,
+      citation_count = x$most_cited_articles[[1]]$citations_count)
+  }
+}
+
+# rm_top10 <- lapply(researcher_docs_top10, getResearcherMostCited)
+# rm_top10 <- as.data.frame(do.call(rbind, rm_top10))
+# rm_top10$category <- "Top 10"
+# rm_top10 <- rm_top10 |>
+#   select(category, r4r_id, name, date_published, identifier, citation_count)
+
 print("Hi Stephen!")
 # get slices ----
 top_10 <- da |>
