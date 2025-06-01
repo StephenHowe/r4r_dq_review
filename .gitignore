@@ -7,3 +7,4 @@
 .Renviron
 *.html
 data/
+*.parquet

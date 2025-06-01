@@ -1,0 +1,182 @@
+---
+title: "RR Cluster Metrics"
+output: html_notebook
+---
+
+## Setup and Configuration
+```{r setup, message=FALSE}
+# packages
+library(aws.s3)
+library(arrow)
+library(duckdb)
+library(dplyr)
+
+# duckDB connection
+con <- dbConnect(duckdb::duckdb())
+```
+
+##  OpenCitation
+Create `.parquet` archive of doi-author_id pairings. This is done via a duckDB database built from the OpenCitations dataset saved as `.csv` files (50Gb). The resulting file is 8Gb. This code has been run outside of the notebook and is not executed here.
+```{r opencite, eval=FALSE}
+# Create arrow dataset from OpenCitation .csv
+openalex <- open_dataset(
+  "/Users/stephenhowe/Documents/data/csv_openalex",
+  format = "csv"
+)
+
+# register arrow dataset as duckDB table
+to_duckdb(openalex, con, "openalex")
+
+# get doi-author_id pairs; save to .parquet
+dbExecute(
+  con,
+  "COPY (
+  SELECT
+    doi,
+    TRIM(REGEXP_EXTRACT(pair.unnest, '^(.*?) \\[omid:ra/\\d+\\]')) AS author_name,
+    REGEXP_EXTRACT(pair.unnest, 'omid:ra/\\d+') AS author_id
+  FROM (
+    SELECT
+      REGEXP_EXTRACT(id, 'doi:[^ ]+') AS doi,
+      REGEXP_EXTRACT_ALL(author, '[^;\\[]+\\[omid:ra/\\d+\\]') AS pairs
+    FROM openalex
+  ) t,
+  UNNEST(pairs) AS pair
+) TO 'doi_author_pairs.parquet' (FORMAT 'parquet');"
+)
+```
+
+Examine first few rows of OpenCitations data. The `author_name` column is included in case author names are needed for QA and debugging.
+```{r}
+open_dataset("doi_author_pairs.parquet") |>
+  head(50) |>
+  collect()
+```
+
+## Ringgold | Researchers
+Create `.parquet` archive of doi-author_id pairings. This is done via a duckDB database built from the `contributed_to` edges in SAND_DS. The resulting file is 260Mb. This code has been run outside of the notebook and is not executed here.
+```{r, eval=FALSE}
+# Create arrow dataset from edges parquet
+contributed_to <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTED_TO/")
+
+# Register duckDB table for edges
+to_duckdb(contributed_to, con, "contributed_to")
+
+# Get doi-author_id pairs; save to .parquet
+dbExecute(
+  con,
+  "COPY (
+  SELECT
+    ct.target as doi,
+    ct.source as author_id
+  from contributed_to ct
+  ) TO '/Users/stephenhowe/Documents/code_active/r4r_dq_review/aap_acp_k_b3/r4r.parquet' (FORMAT 'parquet');"
+)
+```
+
+Examine first few rows of R|R data. The `author_name` column is included in case author names are needed for QA and debugging.
+```{r}
+open_dataset("r4r.parquet") |>
+  head(50) |>
+  collect()
+```
+
+## Calculate Metrics
+### Dataset
+Prepare filtered dataset of doi-author_id pairings using only DOIs found in Ringgold|Researcher data. The dataset is in the form of the doi to the true author_id (from Open Citations) to the predicted author_id (from RR)
+```{r filtered_df}
+# Create arrow dataset for RR data
+rr <- open_dataset("r4r.parquet")
+# register r4r data in duckDB
+to_duckdb(rr, con, "r4r") 
+
+# Create arrow dataset for OpenCitations data
+oc <- open_dataset("doi_author_pairs.parquet")
+to_duckdb(oc, con, "opencite") # register open citations data in duckDB
+
+# Create filtered dataframe of doi to true author_id
+df <- dbGetQuery(
+  con,
+  "SELECT
+    r4r.doi,
+    r4r.author_id AS author_id_pred,
+    opencite.author_id AS author_id_true
+  FROM r4r
+  JOIN opencite ON r4r.doi = opencite.doi"
+)
+```
+
+Examine a few rows of the resulting dataframe
+```{r}
+head(df, 100)
+```
+
+### AAP
+Create function to calculate AAP
+```{r aap}
+calculate_aap <- function(df) {
+  # Total number of records
+  N <- nrow(df)
+
+  # Compute n_ij = count of records in each true/predicted cluster pair
+  n_ij <- df %>%
+    count(author_id_true, author_id_pred, name = "n_ij")
+
+  # Compute n_j = size of each true cluster
+  n_j <- df %>%
+    count(author_id_true, name = "n_j")
+
+  # Join to associate n_j with each n_ij
+  n_ij <- n_ij %>%
+    left_join(n_j, by = "author_id_true")
+
+  # Apply the formula
+  aap <- sum((n_ij$n_ij^2) / n_ij$n_j) / N
+
+  return(aap)
+}
+```
+
+Apply to dataframe
+```{r}
+df |> calculate_aap()
+```
+
+### ACP
+Create function to calculate ACP
+```{r acp}
+calculate_acp <- function(df) {
+  N <- nrow(df)
+
+  # Count n_ij: number of items in predicted cluster i and true cluster j
+  n_ij <- df %>%
+    count(author_id_pred, author_id_true, name = "n_ij")
+
+  # Count n_i: total number of items in predicted cluster i
+  n_i <- df %>%
+    count(author_id_pred, name = "n_i")
+
+  # Merge and compute ACP terms
+  acp_df <- n_ij %>%
+    left_join(n_i, by = "author_id_pred") %>%
+    mutate(term = (n_ij^2) / n_i)
+
+  # Final ACP calculation
+  acp <- sum(acp_df$term) / N
+  return(acp)
+}
+```
+
+Calculate ACP for dataframe
+```{r}
+df |> calculate_acp()
+```
+
+### Tests
+```{r}
+df_test <- read.csv("test_true_data.csv")
+
+df_test |>
+  filter(author_id_true == "author_id_1") |>
+  calculate_aap() # should be 0.375
+```
