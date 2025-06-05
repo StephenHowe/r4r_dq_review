@@ -11,16 +11,16 @@ library(arrow)
 library(duckdb)
 library(dplyr)
 
-# duckDB connection
+# initialize DuckDB connection
 con <- dbConnect(duckdb::duckdb())
 ```
 
 ##  OpenCitation
-Create `.parquet` archive of doi-author_id pairings. This is done via a duckDB database built from the OpenCitations dataset saved as `.csv` files (50Gb). The resulting file is 8Gb. This code has been run outside of the notebook and is not executed here.
+Create `.parquet` archive of doi-author_id-lastname pairings. This is done via a duckDB database built from the OpenCitations dataset saved as `.csv` files (50Gb). Dataset downloaded [from here](https://opencitations.net/download). The resulting parquet file is 5.2Gb. This code has been run outside of the notebook and is not executed here. Update filepath before executing.
 ```{r opencite, eval=FALSE}
 # Create arrow dataset from OpenCitation .csv
 openalex <- open_dataset(
-  "/Users/stephenhowe/Documents/data/csv_openalex",
+  "<path-to-data>/data/csv_openalex",
   format = "csv"
 )
 
@@ -33,7 +33,7 @@ dbExecute(
   "COPY (
   SELECT
     doi,
-    TRIM(REGEXP_EXTRACT(pair.unnest, '^(.*?) \\[omid:ra/\\d+\\]')) AS author_name,
+    REGEXP_EXTRACT(pair.unnest, '^([^,]+)') AS lastname,
     REGEXP_EXTRACT(pair.unnest, 'omid:ra/\\d+') AS author_id
   FROM (
     SELECT
@@ -46,21 +46,24 @@ dbExecute(
 )
 ```
 
-Examine first few rows of OpenCitations data. The `author_name` column is included in case author names are needed for QA and debugging.
+Examine first few rows of OpenCitations data.
 ```{r}
 open_dataset("doi_author_pairs.parquet") |>
-  head(50) |>
+  head(500) |>
   collect()
 ```
 
 ## Ringgold | Researchers
-Create `.parquet` archive of doi-author_id pairings. This is done via a duckDB database built from the `contributed_to` edges in SAND_DS. The resulting file is 260Mb. This code has been run outside of the notebook and is not executed here.
+Create `.parquet` archive of doi-author_id-lastname pairings. This is done via a duckDB database built from the `contribution` edges in SAND_DS. The resulting file is 112Mb. This code has been run outside of the notebook and is not executed here.
 ```{r, eval=FALSE}
-# Create arrow dataset from edges parquet
-contributed_to <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTED_TO/")
+# Create arrow dataset from edges and nodes parquet
+# contribution edge
+contribution <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTION/")
+duckdb_register_arrow(con, "contribution", contribution)
 
-# Register duckDB table for edges
-to_duckdb(contributed_to, con, "contributed_to")
+# author node
+da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
+duckdb_register_arrow(con, "distinctAuthor", da)
 
 # Get doi-author_id pairs; save to .parquet
 dbExecute(
@@ -68,13 +71,15 @@ dbExecute(
   "COPY (
   SELECT
     ct.target as doi,
-    ct.source as author_id
-  from contributed_to ct
-  ) TO '/Users/stephenhowe/Documents/code_active/r4r_dq_review/aap_acp_k_b3/r4r.parquet' (FORMAT 'parquet');"
+    ct.source as author_id,
+    da.lastname as lastname
+  from contribution ct
+  join distinctAuthor da on ct.source = da.id
+  ) TO 'r4r.parquet' (FORMAT 'parquet');"
 )
 ```
 
-Examine first few rows of R|R data. The `author_name` column is included in case author names are needed for QA and debugging.
+Examine first few rows of R|R data.
 ```{r}
 open_dataset("r4r.parquet") |>
   head(50) |>
@@ -83,8 +88,8 @@ open_dataset("r4r.parquet") |>
 
 ## Calculate Metrics
 ### Dataset
-Prepare filtered dataset of doi-author_id pairings using only DOIs found in Ringgold|Researcher data. The dataset is in the form of the doi to the true author_id (from Open Citations) to the predicted author_id (from RR)
-```{r filtered_df}
+Prepare filtered dataset of doi-author_id pairings using only DOIs found in Ringgold|Researcher data. The lastname is also used in the join to remove authors found on one dataset's article metadata that is not found in the other. The dataset is in the form of the doi to the true author_id (from Open Citations) to the predicted author_id (from RR).
+```{r filtered_df, include=FALSE}
 # Create arrow dataset for RR data
 rr <- open_dataset("r4r.parquet")
 # register r4r data in duckDB
@@ -102,7 +107,7 @@ df <- dbGetQuery(
     r4r.author_id AS author_id_pred,
     opencite.author_id AS author_id_true
   FROM r4r
-  JOIN opencite ON r4r.doi = opencite.doi"
+  JOIN opencite ON r4r.doi = opencite.doi AND r4r.lastname = opencite.lastname"
 )
 ```
 
@@ -112,7 +117,12 @@ head(df, 100)
 ```
 
 ### AAP
-Create function to calculate AAP
+Create function to calculate AAP.
+
+$$
+\text{AAP} = \frac{1}{N} \sum_{j=1}^{t} \sum_{i=1}^{e} \frac{1}{n_{ij}}
+$$
+
 ```{r aap}
 calculate_aap <- function(df) {
   # Total number of records
@@ -144,6 +154,11 @@ df |> calculate_aap()
 
 ### ACP
 Create function to calculate ACP
+
+$$
+\text{ACP} = \frac{1}{N} \sum_{j=1}^{t} \sum_{i=1}^{e} \frac{n_{ij}^2}{n_i}
+$$
+
 ```{r acp}
 calculate_acp <- function(df) {
   N <- nrow(df)
@@ -172,11 +187,3 @@ Calculate ACP for dataframe
 df |> calculate_acp()
 ```
 
-### Tests
-```{r}
-df_test <- read.csv("test_true_data.csv")
-
-df_test |>
-  filter(author_id_true == "author_id_1") |>
-  calculate_aap() # should be 0.375
-```

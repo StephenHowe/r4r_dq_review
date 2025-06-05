@@ -94,36 +94,35 @@ library(dplyr)
 con <- dbConnect(duckdb::duckdb())
 
 # contribution edge
-contributed_to <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTED_TO/")
-to_duckdb(contributed_to, table_name = "contributed_to", con = con)
+contribution <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTION/")
+duckdb_register_arrow(con, "contribution", contribution)
 
 # author info
-# da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
-# duckdb_register_arrow(con, "distinctAuthor", da)
+da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
+duckdb_register_arrow(con, "distinctAuthor", da)
 
 # test
-fugazi_1 <- dbGetQuery(
-  con,
-  "Select
-    ct.target as doi,
-    SUBSTR(ct.source, 1, 40) AS author_name,
-    ct.source as author_id
-  from contributed_to ct
-  limit 10"
-) # works
+# fugazi_1 <- dbGetQuery(
+#   con,
+#   "Select
+#     ct.target as doi,
+#     SUBSTR(ct.source, 1, 40) AS author_name,
+#     ct.source as author_id
+#   from contributed_to ct
+#   limit 10"
+# ) # works
 
 dbExecute(
   con,
   "COPY (
   SELECT
     ct.target as doi,
-    SUBSTR(ct.source, 1, 40) AS author_name,
-    ct.source as author_id
-  from contributed_to ct
+    ct.source as author_id,
+    da.lastname as lastname
+  from contribution ct
+  join distinctAuthor da on ct.source = da.id
   ) TO '/Users/stephenhowe/Documents/code_active/r4r_dq_review/aap_acp_k_b3/r4r.parquet' (FORMAT 'parquet');"
 )
 
 
-# r4r:00018dd7-909b-435f-bade-6be4b8b8bbd9_rinne_mikael
 
-# r4r:0043e9de-08f1-4f38-a4cf-6b968a761157_e_mcgrath_c

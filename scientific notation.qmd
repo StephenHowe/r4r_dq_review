@@ -1,0 +1,33 @@
+---
+title: "Untitled"
+format: html
+---
+
+Formula for Average Author Purity:
+$$
+\text{AAP} = \frac{1}{N} \sum_{j=1}^{t} \sum_{i=1}^{e} \frac{1}{n_{ij}}
+$$
+Imagine we have a dataset of two articles. Both articles are authored by Robin Bramley. The second article has Tico as a co-author. In addition to the actual authors, both our test (predicted) datasets and our evaluation dataset (truth) have disambiguated these authors correctly.
+
+| doi | author_pred | author_truth |
+|-----------------|-----------------|-----------------|
+| doi_1    | dA_Robin_Bramley    | oc_Robin_Bramely    |
+| doi _2    | dA_Robin_Bramley    | oc_Robin_Bramely   |
+| doi _3    | dA_Tico_Perez    | oc_Tico_Perez  |
+
+We can calculate AAP as follows:
+
+* N = 3 total author records in the predicted dataset (i.e. 3 rows)
+
+
+1/10 * [ 100 / 10 ] = 1
+
+1 / 11 * [ (10^2) / 11 + (1^2) / 11 ]
+
+0.0909 * [9.09 + 0.0909] = 0.83
+
+1 / 100 * [ (10^2) / 100 + (1^2) / 100 + ... ]
+
+.01 * ( 1 + (90 * .01))
+.01 * 1.9 = 0.019
+

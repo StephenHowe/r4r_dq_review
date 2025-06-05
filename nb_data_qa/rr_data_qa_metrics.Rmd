@@ -19,17 +19,208 @@ library(plotly)
 ##  Create Connections to Datasets
 This code establishes a connection to the .parquet files in SAND_DS S3 as arrow datasets and then again as duckDB tables.
 ```{r datasets}
-# arrow datasets
+# arrow datasets of nodes
 da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
 inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
 art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
-aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
 
-# duckdb tables
+# arrow datasets of edges
+aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
+contr <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTION")
+topics <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/TOPIC_OF_INTEREST")
+collab <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/COLLABORATOR")
+
+# register duckdb tables
 con <- dbConnect(duckdb::duckdb())
 duckdb_register_arrow(con, "distinctAuthor", da)
 duckdb_register_arrow(con, "institutions", inst)
 duckdb_register_arrow(con, "articles", art)
 duckdb_register_arrow(con, "affiliated_to", aff)
+duckdb_register_arrow(con, "contribution", contr)
+duckdb_register_arrow(con, "topics_of_interest", topics)
+duckdb_register_arrow(con, "collaborators", collab)
 ```
 
+## Metrics
+### CM1
+% of distinctAuthors with at least on `contribution` edge.
+```{r}
+count_da <- dbGetQuery(
+  con,
+  "Select count(distinct id)
+  from distinctAuthor"
+)
+
+count_contr_distinct <- dbGetQuery(
+  con,
+  "SELECT count(distinct source)
+  from contribution"
+)
+
+count_contr_distinct$`count(DISTINCT source)` / count_da$`count(DISTINCT id)`
+```
+
+Ratio of contribution edges to occurrences
+```{r}
+count_occ <- dbGetQuery(
+  con,
+  "SELECT SUM(occurrences)
+  FROM distinctAuthor"
+)
+
+count_contr <- dbGetQuery(
+  con,
+  "SELECT count(*)
+  FROM contribution"
+)
+
+count_contr$`count_star()` / count_occ$`sum(occurrences)`
+```
+
+### CM2
+% of distinctAuthors with at least one affiliation edge
+```{r}
+count_aff_distinct <- dbGetQuery(
+  con,
+  "SELECT count(distinct source)
+  from affiliated_to"
+)
+
+count_aff_distinct$`count(DISTINCT source)` / count_da$`count(DISTINCT id)`
+```
+
+Count of distinctAuthors with no affiliation edge
+```{r}
+count_da$`count(DISTINCT id)` - count_aff_distinct$`count(DISTINCT source)`
+```
+
+### CM3
+% of distinctAuthors with at least one TOPIC_OF_INTERST
+```{r}
+count_topics_distinct <- dbGetQuery(
+  con,
+  "SELECT count(distinct source)
+  from topics_of_interest"
+)
+
+count_topics_distinct$`count(DISTINCT source)` / count_da$`count(DISTINCT id)`
+```
+
+### CM4
+% of distinctAuthors with at least on collaborated_with edge
+```{r}
+count_collab_distinct <- dbGetQuery(
+  con,
+  "SELECT count(distinct source)
+  FROM collaborators"
+)
+
+count_collab_distinct$`count(DISTINCT source)` / count_da$`count(DISTINCT id)`
+```
+
+Count of distinctAuthors with no collaborators
+```{r}
+count_da$`count(DISTINCT id)` - count_collab_distinct$`count(DISTINCT source)`
+```
+
+### CM5
+% of distinctAuthors with forename >3 characters in length
+```{r}
+count_namelength_distinct <- dbGetQuery(
+  con,
+  "SELECT count(distinct id)
+  FROM distinctAuthor
+  WHERE length(forename) > 2"
+)
+
+count_namelength_distinct$`count(DISTINCT id)` / count_da$`count(DISTINCT id)`
+```
+
+Count of distinctAuthors with givenname <=3 characters in length
+```{r}
+count_da$`count(DISTINCT id)` - count_namelength_distinct$`count(DISTINCT id)`
+```
+
+Examples:
+```{r}
+dbGetQuery(
+  con,
+  "SELECT id, forename, lastname
+  FROM distinctAuthor
+  WHERE length(forename) < 3
+  LIMIT 1000"
+)
+
+```
+
+### AR-CM1
+% of articles with a DOI
+```{r}
+count_article <- dbGetQuery(
+  con,
+  "SELECT count(*)
+  FROM articles"
+)
+
+count_hasDOI <- dbGetQuery(
+  con,
+  "SELECT COUNT(*)
+  FROM articles
+  WHERE doi IS NOT NULL
+  AND TRIM(doi) <> ''"
+)
+
+count_hasDOI$`count_star()` / count_article$`count_star()`
+```
+
+### AR-CM2
+% of articles with a pub_date
+```{r}
+count_hasPubDate <- dbGetQuery(
+  con,
+  "SELECT count(*)
+  FROM articles
+  WHERE pub_date IS NOT NULL"
+)
+
+count_hasPubDate$`count_star()` / count_article$`count_star()`
+```
+
+
+
+
+
+
+
+# Experiments and Scratch
+```{r, eval=FALSE}
+contr |>
+  filter(source == "r4r:01JMF02071PWPPHT022S30NJQW") |>
+  collect()
+
+
+da_json <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/r4r_projection_authors/",
+                        format = "json")
+duckdb_register_arrow(con, "da_json", da_json)
+
+test_1 <- dbGetQuery(
+  con,
+  "SELECT *
+  FROM da_json
+  WHERE persistent_identifier = 'r4r:01JMF02071PWPPHT022S30NJQW'"
+)
+
+
+top_topic <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/TOP_TOPIC/")
+top_topic |> count() |> collect()
+
+topics |> count() |> collect()
+
+field_of_study <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/FIELD_OF_STUDY/")
+field_of_study |> count() |> collect()
+
+
+articles <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/article/")
+articles |> count() |> collect()
+fugazi_2 <- articles |> head(10) |> collect()
+```
