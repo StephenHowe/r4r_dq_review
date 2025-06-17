@@ -43,7 +43,7 @@ duckdb_register_arrow(con, "collaborators", collab)
 
 ## Metrics
 ### CM1
-% of distinctAuthors with at least on `contribution` edge.
+% of distinctAuthors with at least one `contribution` edge.
 ```{r}
 count_da <- dbGetQuery(
   con,
@@ -186,6 +186,51 @@ count_hasPubDate <- dbGetQuery(
 count_hasPubDate$`count_star()` / count_article$`count_star()`
 ```
 
+## Fivenum Summaries and Thresholds
+### What is the distribution of occurrences?
+```{r}
+dbGetQuery(con,
+           "SELECT MIN(da.occurrences) as min,
+           QUANTILE_CONT(da.occurrences, 0.25) as p25,
+           MEDIAN(da.occurrences) as med,
+           QUANTILE_CONT(da.occurrences, 0.75) as p75,
+           QUANTILE_CONT(da.occurrences, 0.9) as p90,
+           QUANTILE_CONT(da.occurrences, 0.95) as p95,
+           QUANTILE_CONT(da.occurrences, 0.99) as p99,
+           QUANTILE_CONT(da.occurrences, 0.999) as p999,
+           QUANTILE_CONT(da.occurrences, 0.9999) as p9999,
+           MAX(da.occurrences) as max
+           FROM distinctAuthor da")
+```
+
+### What is the distribution of the number of collaborators
+```{r}
+dbGetQuery(con,
+           "SELECT MIN(da.collaborators_count) as min,
+           QUANTILE_CONT(da.collaborators_count, 0.25) as p25,
+           MEDIAN(da.collaborators_count) as med,
+           QUANTILE_CONT(da.collaborators_count, 0.75) as p75,
+           QUANTILE_CONT(da.collaborators_count, 0.9) as p90,
+           QUANTILE_CONT(da.collaborators_count, 0.95) as p95,
+           QUANTILE_CONT(da.collaborators_count, 0.99) as p99,
+           QUANTILE_CONT(da.collaborators_count, 0.999) as p999,
+           QUANTILE_CONT(da.collaborators_count, 0.9999) as p9999,
+           MAX(da.collaborators_count) as max
+           FROM distinctAuthor da")
+```
+### What is the distribution of affiliations per author?
+```{r}
+affialtions_to_author <- aff |>
+  group_by(source) |>
+  summarise(count = n(),
+            ) |>
+  collect()
+
+affialtions_to_author |>
+  summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
+            count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
+```
+
 
 
 
@@ -223,4 +268,59 @@ field_of_study |> count() |> collect()
 articles <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/article/")
 articles |> count() |> collect()
 fugazi_2 <- articles |> head(10) |> collect()
+
+
+au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/", format = "json")
+duckdb_register_arrow(con, "author_doc", au_docs)
+dbGetQuery(
+  con,
+  "SELECT *
+  FROM author_doc
+  WHERE persistent_identifier = 'r4r:01JMF02071PWPPHT022S30NJQW'"
+)
+
+
+fugazi_3 <- dbGetQuery(
+  con,
+  "SELECT da.id, count(c.id)
+  FROM distinctAuthor da
+  JOIN contribution c on da.id = c.source
+  WHERE length(forename) > 2
+  GROUP BY da.id
+  "
+)
+
+
+aff |>
+  group_by(source) |>
+  summarise(count = n(),
+            ) |>
+  filter(count > 4) |>
+  count() |>
+  collect()
+```
+
+## Thresholds
+## ORCID
+```{r}
+r4rid_orcid <- dbGetQuery(
+  con,
+  "SELECT id, occurrences, orcid
+  FROM distinctAuthor
+  WHERE LEN(orcid) > 1"
+)
+
+r4rid_orcid_unnest <- tibble(
+  r4r_id = r4rid_orcid$id,
+  occurrences = r4rid_orcid$occurrences,
+  orcid = r4rid_orcid$orcid) |>
+  unnest_longer(orcid) |>
+  filter(orcid != "")
+
+id_orc_occ <- r4rid_orcid_unnest |>
+  group_by(r4r_id, occurrences) |>
+  summarise(orc_count = n())
+
+fivenum(id_orc_occ$orc_count)
+quantile(id_orc_occ$orc_count, c(.9,.99,.999, .9999))
 ```
