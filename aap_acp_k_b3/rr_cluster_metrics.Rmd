@@ -120,7 +120,7 @@ head(df, 100)
 Create function to calculate AAP.
 
 $$
-\text{AAP} = \frac{1}{N} \sum_{j=1}^{t} \sum_{i=1}^{e} \frac{1}{n_{ij}}
+\text{AAP} = \frac{1}{N} \sum_{j=1}^{t} \sum_{i=1}^{e} \frac{n_{ij}^2}{n_{j}}
 $$
 
 ```{r aap}

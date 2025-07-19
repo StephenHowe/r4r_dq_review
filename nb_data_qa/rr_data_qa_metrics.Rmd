@@ -1,10 +1,12 @@
 ---
-title: "R|R Data Quality Assurance"
+title: "Data Evaluation for Quality Assurance and Understanding in Graphs"
+subtitle: "Stephen Howe"
 output: html_notebook
 ---
 
 This notebook was run on `r Sys.Date()`
 
+# Notebook Setup
 ## Configuration
 ```{r packages, warning=FALSE, message=FALSE}
 library(aws.s3)
@@ -14,6 +16,7 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(plotly)
+library(tictoc)
 ```
 
 ##  Create Connections to Datasets
@@ -23,6 +26,7 @@ This code establishes a connection to the .parquet files in SAND_DS S3 as arrow 
 da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
 inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
 art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
+au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/r4r_projection_authors", format = "json") # json projection
 
 # arrow datasets of edges
 aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
@@ -39,9 +43,156 @@ duckdb_register_arrow(con, "affiliated_to", aff)
 duckdb_register_arrow(con, "contribution", contr)
 duckdb_register_arrow(con, "topics_of_interest", topics)
 duckdb_register_arrow(con, "collaborators", collab)
+duckdb_register_arrow(con, "author_docs", au_docs)
 ```
 
-## Metrics
+# Areas of Evaluation
+## Descriptive Statistics / Data Profiling
+Any evaluation of data for quality and understanding should start with the calculation of descriptive and aggregate statistics and the creation of a comprehensive profile of the dataset. These statistics provide foundational information about the dataset itself that can work as a baseline in the other areas of evaluation. Calculated over time, descriptive and aggregate statistics are useful for understanding how the shape of the data is changing and trending.
+
+* Descriptive Statistics
+* Count of node by type
+* Count of edges by type
+* Description of datatype of node attributes
+* Description of datatype of edge attributes
+* Distribution (five number summary) of numeric attributes
+
+# Speed Test
+```{r}
+# arrow + json
+# tic()
+# au_docs |> count() |> collect()
+# toc()
+
+# arrow + parquet
+tic()
+da |> count() |> collect()
+toc()
+
+# arrow + duckdb + json
+# tic()
+# dbGetQuery(
+#   con,
+#   "SELECT count(*) FROM author_doc"
+# )
+# toc()
+
+# arrow + duckdb + parquet
+tic()
+dbGetQuery(
+  con,
+  "SELECT count(*) FROM distinctAuthor"
+)
+toc()
+```
+### Counts of Nodes
+```{r}
+count_da <- dbGetQuery(con, "SELECT count(*) FROM distinctAuthor")
+count_art <- dbGetQuery(con, "SELECT count(*) FROM articles")
+count_inst <- dbGetQuery(con, "SELECT count(*) FROM institutions")
+tibble(
+  node = c("distinctAuthors", "articles", "institutions"),
+  count = c(count_da[[1]], count_art[[1]], count_inst[[1]])
+)
+```
+
+### Distributions of Key Node Properties
+```{r}
+# occurences
+dist_occurences <- dbGetQuery(
+  con,
+  "SELECT
+    'occurences' as property,
+    MIN(da.occurrences) as min,
+    QUANTILE_CONT(da.occurrences, 0.25) as p25,
+    MEDIAN(da.occurrences) as med,
+    QUANTILE_CONT(da.occurrences, 0.75) as p75,
+    QUANTILE_CONT(da.occurrences, 0.9) as p90,
+    QUANTILE_CONT(da.occurrences, 0.95) as p95,
+    QUANTILE_CONT(da.occurrences, 0.99) as p99,
+    QUANTILE_CONT(da.occurrences, 0.999) as p999,
+    QUANTILE_CONT(da.occurrences, 0.9999) as p9999,
+    MAX(da.occurrences) as max
+  FROM distinctAuthor da"
+)
+
+# name_variants
+dist_namevariants <- dbGetQuery(
+  con,
+  "SELECT
+    'name_variants' as property,
+    MIN(LENGTH(da.name_variants)) as min,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.25) as p25,
+    MEDIAN(LENGTH(da.name_variants)) as med,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.75) as p75,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.9) as p90,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.95) as p95,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.99) as p99,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.999) as p999,
+    QUANTILE_CONT(LENGTH(da.name_variants), 0.9999) as p9999,
+    MAX(LENGTH(da.name_variants)) as max
+  FROM distinctAuthor da"
+)
+
+# degree_of_belief
+dist_dob <- dbGetQuery(
+  con,
+  "SELECT
+    'degree_of_belief' as property,
+    MIN(da.degree_of_belief) as min,
+    QUANTILE_CONT(da.degree_of_belief, 0.25) as p25,
+    MEDIAN(da.degree_of_belief) as med,
+    QUANTILE_CONT(da.degree_of_belief, 0.75) as p75,
+    QUANTILE_CONT(da.degree_of_belief, 0.9) as p90,
+    QUANTILE_CONT(da.degree_of_belief, 0.95) as p95,
+    QUANTILE_CONT(da.degree_of_belief, 0.99) as p99,
+    QUANTILE_CONT(da.degree_of_belief, 0.999) as p999,
+    QUANTILE_CONT(da.degree_of_belief, 0.9999) as p9999,
+    MAX(da.degree_of_belief) as max
+  FROM distinctAuthor da"
+)
+
+# orcid
+dist_orcid <- dbGetQuery(
+  con,
+  "SELECT
+    'orcid' as property,
+    MIN(LENGTH(da.orcid)) as min,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.25) as p25,
+    MEDIAN(LENGTH(da.orcid)) as med,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.75) as p75,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.9) as p90,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.95) as p95,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.99) as p99,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.999) as p999,
+    QUANTILE_CONT(LENGTH(da.orcid), 0.9999) as p9999,
+    MAX(LENGTH(da.orcid)) as max
+  FROM distinctAuthor da"
+)
+
+rbind(
+  dist_occurences,
+  dist_namevariants,
+  dist_dob,
+  dist_orcid
+)
+```
+
+### Count of Edges
+```{r}
+count_aff <- dbGetQuery(con, "SELECT count(*) FROM affiliated_to")
+count_contr <- dbGetQuery(con, "SELECT count(*) FROM contribution")
+# count_topics <- dbGetQuery(con, "SELECT count(*) FROM topics_of_interest")
+# count_collab <- dbGetQuery(con, "SELECT count(*) FROM collaborators") # long run time
+# tibble(
+#   edge = c("affiliated_to", "contributed_to", "topics_of_interest", "collaborated_with"),
+#   count = c(count_aff[[1]], count_contr[[1]], count_topics[[1]], count_collab[[1]])
+# )
+```
+
+
+
+
 ### CM1
 % of distinctAuthors with at least one `contribution` edge.
 ```{r}
@@ -77,6 +228,16 @@ count_contr <- dbGetQuery(
 count_contr$`count_star()` / count_occ$`sum(occurrences)`
 ```
 
+Comfirm against json docs
+```{r, eval=FALSE}
+count_da_json <- dbGetQuery(
+  con,
+  "SELECT count(persistent_identifier) from author_docs "
+)
+
+count_da == count_da_json
+```
+
 ### CM2
 % of distinctAuthors with at least one affiliation edge
 ```{r}
@@ -104,6 +265,18 @@ count_topics_distinct <- dbGetQuery(
 )
 
 count_topics_distinct$`count(DISTINCT source)` / count_da$`count(DISTINCT id)`
+```
+
+From projected json documents
+```{r}
+count_topics_distinct_json <- au_docs |>
+  select(persistent_identifier, concepts) |> 
+  collect() |>
+  unnest(concepts)
+
+count_topics_distinct_json |>
+  distinct(persistent_identifier) |>
+  count()
 ```
 
 ### CM4
