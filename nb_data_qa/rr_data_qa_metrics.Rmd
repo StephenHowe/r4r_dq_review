@@ -23,16 +23,26 @@ library(tictoc)
 This code establishes a connection to the .parquet files in SAND_DS S3 as arrow datasets and then again as duckDB tables.
 ```{r datasets}
 # arrow datasets of nodes
-da <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
-inst <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
-art <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
-au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/r4r_projection_authors", format = "json") # json projection
+da <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/distinctauthor")
+inst <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/linked_institutions/")
+art <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/projected_article/")
+
+au_docs <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/r4r_projection_authors",
+  format = "json") # json projection
 
 # arrow datasets of edges
-aff <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
-contr <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTION")
-topics <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/TOPIC_OF_INTEREST")
-collab <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/COLLABORATOR")
+aff <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/AFFILIATION/")
+contr <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/CONTRIBUTION")
+topics <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/TOPIC_OF_INTEREST")
+collab <- open_dataset(
+  "s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/COLLABORATOR")
 
 # register duckdb tables
 con <- dbConnect(duckdb::duckdb())
@@ -44,6 +54,21 @@ duckdb_register_arrow(con, "contribution", contr)
 duckdb_register_arrow(con, "topics_of_interest", topics)
 duckdb_register_arrow(con, "collaborators", collab)
 duckdb_register_arrow(con, "author_docs", au_docs)
+```
+
+TODO: Examine .json files in S3 to see how they are structured
+
+## Describe Tables
+```{r}
+# describe
+dbGetQuery(con, "DESCRIBE table distinctAuthor")
+dbGetQuery(con, "DESCRIBE table institutions")
+dbGetQuery(con, "DESCRIBE table articles")
+dbGetQuery(con, "DESCRIBE table affiliated_to")
+dbGetQuery(con, "DESCRIBE table contribution")
+dbGetQuery(con, "DESCRIBE table topics_of_interest")
+dbGetQuery(con, "DESCRIBE table collaborators")
+dbGetQuery(con, "DESCRIBE table author_docs")
 ```
 
 # Areas of Evaluation
@@ -58,10 +83,10 @@ Any evaluation of data for quality and understanding should start with the calcu
 * Distribution (five number summary) of numeric attributes
 
 # Speed Test
-```{r}
-# arrow + json
+```{r, eval=FALSE}
+# # arrow + json
 # tic()
-# au_docs |> count() |> collect()
+# au_docs |> count(persistent_identifier) |> collect()
 # toc()
 
 # arrow + parquet
@@ -73,7 +98,7 @@ toc()
 # tic()
 # dbGetQuery(
 #   con,
-#   "SELECT count(*) FROM author_doc"
+#   "SELECT count(persistent_identifier) FROM author_doc"
 # )
 # toc()
 
@@ -85,6 +110,7 @@ dbGetQuery(
 )
 toc()
 ```
+
 ### Counts of Nodes
 ```{r}
 count_da <- dbGetQuery(con, "SELECT count(*) FROM distinctAuthor")
@@ -96,8 +122,26 @@ tibble(
 )
 ```
 
-### Distributions of Key Node Properties
+### Distributions of Key Node Properties - distinctAuthor
 ```{r}
+# occurences
+dist_forename <- dbGetQuery(
+  con,
+  "SELECT
+    'forename' as property,
+    MIN(LENGTH(da.forename)) as min,
+    QUANTILE_CONT(LENGTH(da.forename), 0.25) as p25,
+    MEDIAN(LENGTH(da.forename)) as med,
+    QUANTILE_CONT(LENGTH(da.forename), 0.75) as p75,
+    QUANTILE_CONT(LENGTH(da.forename), 0.9) as p90,
+    QUANTILE_CONT(LENGTH(da.forename), 0.95) as p95,
+    QUANTILE_CONT(LENGTH(da.forename), 0.99) as p99,
+    QUANTILE_CONT(LENGTH(da.forename), 0.999) as p999,
+    QUANTILE_CONT(LENGTH(da.forename), 0.9999) as p9999,
+    MAX(LENGTH(da.forename)) as max
+  FROM distinctAuthor da"
+)
+
 # occurences
 dist_occurences <- dbGetQuery(
   con,
@@ -170,12 +214,110 @@ dist_orcid <- dbGetQuery(
   FROM distinctAuthor da"
 )
 
+# articles_as_single_author
+dist_articles_as_single_author <- dbGetQuery(
+  con,
+  "SELECT
+    'articles_as_single_author' as property,
+    MIN(da.articles_as_single_author) as min,
+    QUANTILE_CONT(da.articles_as_single_author, 0.25) as p25,
+    MEDIAN(da.articles_as_single_author) as med,
+    QUANTILE_CONT(da.articles_as_single_author, 0.75) as p75,
+    QUANTILE_CONT(da.articles_as_single_author, 0.9) as p90,
+    QUANTILE_CONT(da.articles_as_single_author, 0.95) as p95,
+    QUANTILE_CONT(da.articles_as_single_author, 0.99) as p99,
+    QUANTILE_CONT(da.articles_as_single_author, 0.999) as p999,
+    QUANTILE_CONT(da.articles_as_single_author, 0.9999) as p9999,
+    MAX(da.articles_as_single_author) as max
+  FROM distinctAuthor da"
+)
+
+# collaborators_count
+dist_collaborators_count <- dbGetQuery(
+  con,
+  "SELECT
+    'collaborators_count' as property,
+    MIN(da.collaborators_count) as min,
+    QUANTILE_CONT(da.collaborators_count, 0.25) as p25,
+    MEDIAN(da.collaborators_count) as med,
+    QUANTILE_CONT(da.collaborators_count, 0.75) as p75,
+    QUANTILE_CONT(da.collaborators_count, 0.9) as p90,
+    QUANTILE_CONT(da.collaborators_count, 0.95) as p95,
+    QUANTILE_CONT(da.collaborators_count, 0.99) as p99,
+    QUANTILE_CONT(da.collaborators_count, 0.999) as p999,
+    QUANTILE_CONT(da.collaborators_count, 0.9999) as p9999,
+    MAX(da.collaborators_count) as max
+  FROM distinctAuthor da"
+)
+
+# topics
+dist_topics <- dbGetQuery(
+  con,
+  "SELECT
+    'topics' as property,
+    MIN(LENGTH(da.topics)) as min,
+    QUANTILE_CONT(LENGTH(da.topics), 0.25) as p25,
+    MEDIAN(LENGTH(da.topics)) as med,
+    QUANTILE_CONT(LENGTH(da.topics), 0.75) as p75,
+    QUANTILE_CONT(LENGTH(da.topics), 0.9) as p90,
+    QUANTILE_CONT(LENGTH(da.topics), 0.95) as p95,
+    QUANTILE_CONT(LENGTH(da.topics), 0.99) as p99,
+    QUANTILE_CONT(LENGTH(da.topics), 0.999) as p999,
+    QUANTILE_CONT(LENGTH(da.topics), 0.9999) as p9999,
+    MAX(LENGTH(da.topics)) as max
+  FROM distinctAuthor da"
+)
+
+# authorship_period
+dist_author_period_years <- dbGetQuery(
+  con,
+  "SELECT
+  'authorship_period_years' AS property,
+  MIN(years) AS min,
+  QUANTILE_CONT(years, 0.25) AS p25,
+  MEDIAN(years) AS med,
+  QUANTILE_CONT(years, 0.75) AS p75,
+  QUANTILE_CONT(years, 0.9) AS p90,
+  QUANTILE_CONT(years, 0.95) AS p95,
+  QUANTILE_CONT(years, 0.99) AS p99,
+  QUANTILE_CONT(years, 0.999) AS p999,
+  QUANTILE_CONT(years, 0.9999) AS p9999,
+  MAX(years) AS max
+FROM (
+  SELECT
+    ROUND((authorship_period[2] - authorship_period[1])::DOUBLE / 365.25, 2) AS years
+  FROM distinctAuthor
+  WHERE authorship_period IS NOT NULL
+    AND array_length(authorship_period) = 2
+) t;"
+)
+
 rbind(
+  dist_forename,
   dist_occurences,
   dist_namevariants,
   dist_dob,
-  dist_orcid
+  dist_orcid,
+  dist_articles_as_single_author,
+  dist_collaborators_count,
+  dist_topics,
+  dist_author_period_years
 )
+```
+
+### Distributions of Key Node Properties - articles
+```{r}
+# pubdate_range
+pubdate_range <- dbGetQuery(
+  con,
+  "SELECT
+    'pubdate_range' as property,
+    MIN(pub_date) as min,
+    MAX(pub_date) as max
+  FROM articles"
+)
+
+pubdate_range
 ```
 
 ### Count of Edges
@@ -184,10 +326,11 @@ count_aff <- dbGetQuery(con, "SELECT count(*) FROM affiliated_to")
 count_contr <- dbGetQuery(con, "SELECT count(*) FROM contribution")
 # count_topics <- dbGetQuery(con, "SELECT count(*) FROM topics_of_interest")
 # count_collab <- dbGetQuery(con, "SELECT count(*) FROM collaborators") # long run time
-# tibble(
-#   edge = c("affiliated_to", "contributed_to", "topics_of_interest", "collaborated_with"),
-#   count = c(count_aff[[1]], count_contr[[1]], count_topics[[1]], count_collab[[1]])
-# )
+tibble(
+  edge = c("affiliated_to", "contributed_to"),
+  count = c(count_aff[[1]], count_contr[[1]])
+)
+
 ```
 
 

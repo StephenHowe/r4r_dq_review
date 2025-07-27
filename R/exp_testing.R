@@ -63,3 +63,75 @@ r4rid_dob <- dbGetQuery(
   "SELECT id, degree_of_belief
   FROM distinctAuthor"
 )
+
+
+# Five num of author count per article
+contr |> head(1) |> collect()
+
+article_to_author_count <- dbGetQuery(
+  con,
+  "SELECT target, count(source)
+  FROM contribution
+  GROUP BY target"
+)
+
+
+fivenum(article_to_author_count$`count(source)`)
+mean(article_to_author_count$`count(source)`)
+quantile(article_to_author_count$`count(source)`, 0.9)
+
+# Five num of author count per article for Medline
+contr_medl <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/pubmed/medline2016/graph/edges/CONTRIBUTION/")
+
+foo3 <- contr_medl |> head(1) |> collect()
+contr_medl |> count() |> collect()
+
+duckdb_register_arrow(con, "contribution_medline", contr_medl)
+
+article_to_author_count_medline <- dbGetQuery(
+  con,
+  "SELECT target, count(source)
+  FROM contribution_medline
+  GROUP BY target"
+)
+
+fivenum(article_to_author_count_medline$`count(source)`)
+mean(article_to_author_count_medline$`count(source)`)
+quantile(article_to_author_count_medline$`count(source)`, 0.9)
+
+
+# Max numbers
+
+dbGetQuery(
+  con,
+  "SELECT persistent_identifier, recent_articles
+  FROM author_docs
+  WHERE persistent_identifier = 'r4r:01JV0FDDFX1P8QD2H0NCPH1KT9'"
+)
+
+dbGetQuery(
+  con,
+  "SELECT persistent_identifier, COUNT(recent_articles) AS count_articles
+FROM author_docs
+GROUP BY persistent_identifier
+ORDER BY count_articles DESC
+LIMIT 1;"
+)
+
+
+aff |> group_by(source) |> summarise(count = n()) |> arrange(desc(count)) |> head() |> collect() # 43 max
+contr |> group_by(source) |> summarise(count = n()) |> arrange(desc(count)) |> head() |> collect() # 307 max
+collab |> group_by(source) |> summarise(count = n()) |> arrange(desc(count)) |> head() |> collect() # 10484 !!!
+
+da |> head() |> collect()
+fugazi_5 <- da |> select(id, name_variants) |> collect()
+fugazi_5 |> unnest() |> group_by(id) |> summarise(count = n()) |> arrange(desc(count)) |> head() # 10
+
+fugazi_6 <- da |> select(id, orcid) |> collect()
+fugazi_6 |> unnest() |> group_by(id) |> summarise(count = n()) |> arrange(desc(count)) |> head() # 52
+
+
+fugazi_7 <- da |> filter(id == "r4r:01JMF01YF6BV00WTBQ7BXKDDDS") |> collect()
+
+
+
