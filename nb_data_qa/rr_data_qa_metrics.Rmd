@@ -124,7 +124,7 @@ tibble(
 
 ### Distributions of Key Node Properties - distinctAuthor
 ```{r}
-# occurences
+# forename
 dist_forename <- dbGetQuery(
   con,
   "SELECT
@@ -318,6 +318,47 @@ pubdate_range <- dbGetQuery(
 )
 
 pubdate_range
+
+# keywords
+dist_art_keywords <- dbGetQuery(
+  con,
+  "SELECT
+    'keywords' as property,
+    MIN(LENGTH(art.keywords)) as min,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.25) as p25,
+    MEDIAN(LENGTH(art.keywords)) as med,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.75) as p75,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.9) as p90,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.95) as p95,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.99) as p99,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.999) as p999,
+    QUANTILE_CONT(LENGTH(art.keywords), 0.9999) as p9999,
+    MAX(LENGTH(art.keywords)) as max
+  FROM articles art"
+)
+
+# article topics
+dist_art_topics <- dbGetQuery(
+  con,
+  "SELECT
+    'topics' as property,
+    MIN(LENGTH(art.topics)) as min,
+    QUANTILE_CONT(LENGTH(art.topics), 0.25) as p25,
+    MEDIAN(LENGTH(art.topics)) as med,
+    QUANTILE_CONT(LENGTH(art.topics), 0.75) as p75,
+    QUANTILE_CONT(LENGTH(art.topics), 0.9) as p90,
+    QUANTILE_CONT(LENGTH(art.topics), 0.95) as p95,
+    QUANTILE_CONT(LENGTH(art.topics), 0.99) as p99,
+    QUANTILE_CONT(LENGTH(art.topics), 0.999) as p999,
+    QUANTILE_CONT(LENGTH(art.topics), 0.9999) as p9999,
+    MAX(LENGTH(art.topics)) as max
+  FROM articles art"
+)
+
+rbind(
+  dist_art_keywords,
+  dist_art_topics
+)
 ```
 
 ### Count of Edges
@@ -330,7 +371,6 @@ tibble(
   edge = c("affiliated_to", "contributed_to"),
   count = c(count_aff[[1]], count_contr[[1]])
 )
-
 ```
 
 

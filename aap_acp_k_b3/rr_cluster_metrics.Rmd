@@ -53,6 +53,34 @@ open_dataset("doi_author_pairs.parquet") |>
   collect()
 ```
 
+## Top 75 Research Institutes
+Prepare the dataframe for the researchers from the Top 75 Research Institutes
+```{r}
+# get list of prepared files
+my_list <- list.files(
+  "../../top_institutes_data_extraction/output",
+  pattern = ".csv",
+  full.names = TRUE
+)
+
+# combine into one
+top_institutes <- purrr::map_df(my_list, read.csv)
+
+top_institutes <- top_institutes |>
+  filter(doi != "") |>
+  select(doi, Lastname, uuid) |>
+  mutate(doi = paste0("doi:", doi)) |>
+  rename(
+    "lastname" = Lastname,
+    "author_id" = uuid
+  )
+
+arrow::write_parquet(
+  top_institutes,
+  "top_institutes.parquet"
+)
+```
+
 ## Ringgold | Researchers
 Create `.parquet` archive of doi-author_id-lastname pairings. This is done via a duckDB database built from the `contribution` edges in SAND_DS. The resulting file is 112Mb. This code has been run outside of the notebook and is not executed here.
 ```{r, eval=FALSE}
@@ -95,9 +123,24 @@ rr <- open_dataset("r4r.parquet")
 # register r4r data in duckDB
 to_duckdb(rr, con, "r4r") 
 
-# Create arrow dataset for OpenCitations data
-oc <- open_dataset("doi_author_pairs.parquet")
-to_duckdb(oc, con, "opencite") # register open citations data in duckDB
+# # Create arrow dataset for OpenCitations data
+# oc <- open_dataset("doi_author_pairs.parquet")
+# to_duckdb(oc, con, "opencite") # register open citations data in duckDB
+
+# Create arrow dataset for Top Institutes data
+ti <- open_dataset("top_institutes.parquet")
+to_duckdb(ti, con, "top_inst") # register open citations data in duckDB
+
+# # Create filtered dataframe of doi to true author_id
+# df <- dbGetQuery(
+#   con,
+#   "SELECT
+#     r4r.doi,
+#     r4r.author_id AS author_id_pred,
+#     opencite.author_id AS author_id_true
+#   FROM r4r
+#   JOIN opencite ON r4r.doi = opencite.doi AND r4r.lastname = opencite.lastname"
+# )
 
 # Create filtered dataframe of doi to true author_id
 df <- dbGetQuery(
@@ -105,9 +148,9 @@ df <- dbGetQuery(
   "SELECT
     r4r.doi,
     r4r.author_id AS author_id_pred,
-    opencite.author_id AS author_id_true
+    top_inst.author_id AS author_id_true
   FROM r4r
-  JOIN opencite ON r4r.doi = opencite.doi AND r4r.lastname = opencite.lastname"
+  JOIN top_inst ON r4r.doi = top_inst.doi AND r4r.lastname = top_inst.lastname"
 )
 ```
 
