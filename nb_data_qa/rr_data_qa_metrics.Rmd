@@ -56,8 +56,6 @@ duckdb_register_arrow(con, "collaborators", collab)
 duckdb_register_arrow(con, "author_docs", au_docs)
 ```
 
-TODO: Examine .json files in S3 to see how they are structured
-
 ## Describe Tables
 ```{r}
 # describe
@@ -142,8 +140,8 @@ dist_forename <- dbGetQuery(
   FROM distinctAuthor da"
 )
 
-# occurences
-dist_occurences <- dbGetQuery(
+# occurrences
+dist_occurrences <- dbGetQuery(
   con,
   "SELECT
     'occurences' as property,
@@ -294,7 +292,7 @@ FROM (
 
 rbind(
   dist_forename,
-  dist_occurences,
+  dist_occurrences,
   dist_namevariants,
   dist_dob,
   dist_orcid,
@@ -360,6 +358,16 @@ rbind(
   dist_art_topics
 )
 ```
+### dfSummary
+For smaller datasets that can be brought into memory in a reasonable amount of times, R packages such as `{summarytools}` can be useful for getting descriptive statistics with a minimum of coding.
+```{r summarytools}
+institutions_all <- dbGetQuery(
+  con,
+  "SELECT * FROM institutions"
+)
+
+summarytools::dfSummary(institutions_all)
+```
 
 ### Count of Edges
 ```{r}
@@ -374,7 +382,17 @@ tibble(
 ```
 
 
+### Data Quality
+Data quality is not measured by a single value. Rather, it is measured within different dimensions, each dimension describing different characteristics of data.The metrics defined for each dimension are domain specific (i.e. what you will measure for a bibliographic work is different than what you will measure for an organizational record).
 
+* Completeness. The proportion of data stored against the potential for 100%.
+* Uniqueness. No entity instance (thing) will be recorded more than once based upon how that thing is identified.
+* Timeliness. The degree to which data represent reality from the required point in time.
+* Validity. Data is valid if it conforms to the syntax (format, type, range) of its definition.
+* Accuracy. The degree to which data correctly describes the ‘real world’ object or event being described.
+* Consistency. The absence of difference, when comparing two or more representations of a thing against a definition.
+
+The following are is a list, albeit not an exhaustive list, of data quality metrics for the researcher graph.
 
 ### CM1
 % of distinctAuthors with at least one `contribution` edge.
@@ -585,75 +603,6 @@ affialtions_to_author <- aff |>
 affialtions_to_author |>
   summarise(percentiles = c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0),
             count_aff = quantile(count, c(0,.25,0.5,0.75,0.9,0.99,0.999,0.9999, 1.0)))
-```
-
-
-
-
-
-
-
-# Experiments and Scratch
-```{r, eval=FALSE}
-contr |>
-  filter(source == "r4r:01JMF02071PWPPHT022S30NJQW") |>
-  collect()
-
-
-da_json <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/r4r_projection_authors/",
-                        format = "json")
-duckdb_register_arrow(con, "da_json", da_json)
-
-test_1 <- dbGetQuery(
-  con,
-  "SELECT *
-  FROM da_json
-  WHERE persistent_identifier = 'r4r:01JMF02071PWPPHT022S30NJQW'"
-)
-
-
-top_topic <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/TOP_TOPIC/")
-top_topic |> count() |> collect()
-
-topics |> count() |> collect()
-
-field_of_study <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/edges/FIELD_OF_STUDY/")
-field_of_study |> count() |> collect()
-
-
-articles <- open_dataset("s3://com-copyright-agpipeline-sandds/data/internal/parquet/r4r/phyeng/graph/nodes/article/")
-articles |> count() |> collect()
-fugazi_2 <- articles |> head(10) |> collect()
-
-
-au_docs <- open_dataset("s3://com-copyright-agpipeline-sandds/data/output/phyeng/json/graph/nodes/", format = "json")
-duckdb_register_arrow(con, "author_doc", au_docs)
-dbGetQuery(
-  con,
-  "SELECT *
-  FROM author_doc
-  WHERE persistent_identifier = 'r4r:01JMF02071PWPPHT022S30NJQW'"
-)
-
-
-fugazi_3 <- dbGetQuery(
-  con,
-  "SELECT da.id, count(c.id)
-  FROM distinctAuthor da
-  JOIN contribution c on da.id = c.source
-  WHERE length(forename) > 2
-  GROUP BY da.id
-  "
-)
-
-
-aff |>
-  group_by(source) |>
-  summarise(count = n(),
-            ) |>
-  filter(count > 4) |>
-  count() |>
-  collect()
 ```
 
 ## Thresholds
